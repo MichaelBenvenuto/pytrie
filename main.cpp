@@ -1,48 +1,31 @@
 #include <Python.h>
+#include <structmember.h>
 #include <trie.h>
 
+
 _declspec(dllexport) PyObject* trie_construct(PyObject* self, PyObject* args);
+_declspec(dllexport) PyObject* trie_deserialize(PyObject* self, PyObject* args);
+_declspec(dllexport) PyObject* trie_serialize(PyObject* self, PyObject* args);
 _declspec(dllexport) PyObject* trie_addword(PyObject* self, PyObject* args);
 _declspec(dllexport) PyObject* trie_prefixSearch(PyObject* self, PyObject* args);
 
 static PyMethodDef searchmethods[] = {
 	{ "trie_construct", trie_construct, METH_VARARGS, "Create a Trie data structure" },
+	{ "trie_deserialize", trie_deserialize, METH_VARARGS, "Create a Trie from a serialized Trie data structure" },
+	{ "trie_serialize", trie_serialize, METH_VARARGS, "Serialize a Trie data structure" },
 	{ "trie_addword", trie_addword, METH_VARARGS, "Add a word to a Trie data structure" },
 	{ "trie_prefixsearch", trie_prefixSearch, METH_VARARGS, "Search for all words prefixed with string" },
-	{0,0,0,0}
+	{NULL,NULL,0,NULL}
 };
 
 static struct PyModuleDef searchmodule = {
-	PyModuleDef_HEAD_INIT, "Searches", NULL, -1, searchmethods
+	PyModuleDef_HEAD_INIT, "Searches", "Search functions that are c/c++ accelerated", -1, searchmethods
 };
 
 PyMODINIT_FUNC PyInit__searches(void){
-	PyObject* m = PyModule_Create(&searchmodule);
-	if (m == NULL){
-		return 0;
-	}
-
-	static PyObject* s_err;
-
-	s_err = PyErr_NewException("search.error", NULL, NULL);
-	Py_INCREF(s_err);
-	PyModule_AddObject(m, "error", s_err);
-	return m;
-}
-
-int main(int argc, char** argv){
-	wchar_t *program = Py_DecodeLocale(argv[0], NULL);
-	if (program == NULL) {
-		printf("Fatal error: cannot decode argv[0]\n");
-		exit(1);
-	}
-
-	PyImport_AppendInittab("Searches", PyInit__searches);
-	Py_SetProgramName(program);
 	Py_Initialize();
-
-	PyMem_RawFree(program);
-	return 0;
+	PyObject* m = PyModule_Create(&searchmodule);
+	return m;
 }
 
 void trie_destruct(PyObject* capsule){
@@ -57,6 +40,12 @@ void trie_destruct(PyObject* capsule){
 	free(trie);
 }
 
+/*----Trie Functions----
+
+These functions wrap the Trie class and its members
+
+*/
+
 _declspec(dllexport) PyObject* trie_construct(PyObject* self, PyObject* args){
 	Trie* trie = (Trie*)calloc(1, sizeof(Trie));
 
@@ -64,7 +53,23 @@ _declspec(dllexport) PyObject* trie_construct(PyObject* self, PyObject* args){
 		return PyErr_NoMemory();
 	}
 
-	PyObject* trie_capsule = PyCapsule_New((void*)trie, "TriePointer", 0);
+	PyObject* trie_capsule = PyCapsule_New((void*)trie, "TriePointer", trie_destruct);
+	PyCapsule_SetPointer(trie_capsule, (void*)trie);
+
+	return trie_capsule;
+}
+
+_declspec(dllexport) PyObject* trie_deserialize(PyObject* self, PyObject* args) {
+	char* serialized;
+	int size;
+
+	if (!PyArg_ParseTuple(args, "s#", &serialized, &size)) {
+		return Py_None;
+	}
+
+	Trie* trie = Trie::deserialize((uint8_t*)serialized, size);
+
+	PyObject* trie_capsule = PyCapsule_New((void*)trie, "TriePointer", trie_destruct);
 	PyCapsule_SetPointer(trie_capsule, (void*)trie);
 
 	return trie_capsule;
@@ -74,11 +79,13 @@ _declspec(dllexport) PyObject* trie_addword(PyObject* self, PyObject* args){
 	PyObject* trie_capsule;
 	char* word;
 
-	PyArg_ParseTuple(args, "Os", &trie_capsule, &word);
+	if (!PyArg_ParseTuple(args, "Os", &trie_capsule, &word)) {
+		return Py_None;
+	}
 
 	Trie* trie = (Trie*)PyCapsule_GetPointer(trie_capsule, "TriePointer");
 
-	return (trie->addWord(word)) ? Py_True : Py_False;
+	return PyBool_FromLong(trie->addWord(word));
 }
 
 _declspec(dllexport) PyObject* trie_prefixSearch(PyObject* self, PyObject* args){
@@ -92,6 +99,10 @@ _declspec(dllexport) PyObject* trie_prefixSearch(PyObject* self, PyObject* args)
 	size_t size;
 	char** c = trie->prefixSearch(prefix, size);
 
+	if (!c) {
+		return Py_None;
+	}
+
 	PyObject* tuple = PyTuple_New(size);
 	for (int i = 0; i < size; i++){
 		PyTuple_SET_ITEM(tuple, i, Py_BuildValue("s", c[i]));
@@ -100,3 +111,22 @@ _declspec(dllexport) PyObject* trie_prefixSearch(PyObject* self, PyObject* args)
 
 	return tuple;
 }
+
+_declspec(dllexport) PyObject* trie_serialize(PyObject* self, PyObject* args) {
+	PyObject* trie_capsule;
+
+	if (!PyArg_ParseTuple(args, "O", &trie_capsule)) {
+		return Py_None;
+	}
+
+	Trie* trie = (Trie*)PyCapsule_GetPointer(trie_capsule, "TriePointer");
+
+	size_t size;
+
+	return PyBytes_FromStringAndSize((char*)trie->serialize(size), size);
+}
+/*
+
+These functions wrap the TrieNode class and its members
+
+*/

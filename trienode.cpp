@@ -4,7 +4,11 @@
 #include <stdio.h>
 #include <memory.h>
 
-static int constructed = 0;
+#include <vector>
+#include <stack>
+#include <map>
+
+using namespace std;
 
 TrieNode::TrieNode() {
 	this->weight = 0;
@@ -96,7 +100,11 @@ TrieNode* TrieNode::add(const TrieNode& other) {
 		return &this->children[exists];
 	}
 
-	TrieNode* new_children = (TrieNode*)calloc(this->children_size + 1, sizeof(TrieNode));
+	TrieNode* new_children = (TrieNode*)calloc((size_t)(this->children_size + 1), sizeof(TrieNode));
+
+	if (!new_children) {
+		return 0;
+	}
 
 	int mod = 0;
 	int at = -1;
@@ -143,6 +151,64 @@ TrieNode* TrieNode::traverse(uint8_t weight) {
 	return &this->children[find];
 }
 
+uint8_t* TrieNode::serialize(size_t &size) {
+	vector<uint8_t> vec;
+	stack<TrieNode*> nodes;
+
+	nodes.push(this);
+
+	map<TrieNode*, TrieNode*> parent;
+	parent[this] = NULL;
+
+	while (!nodes.empty()) {
+
+		TrieNode* node = nodes.top();
+		vec.push_back(node->getWeight());
+		nodes.pop();
+
+		if (node) {
+			for (int i = node->children_size - 1; i >= 0; i--) {
+				nodes.push(&node->children[i]);
+				parent[&node->children[i]] = node;
+			}
+
+			if (node->getWeight() == 0 && vec.size() > 1) {
+				uint16_t count = 0;
+				TrieNode* current = node;
+				while (parent[current]) {
+					if (!nodes.empty()) {
+						count++;
+						if (parent[current]->traverse(nodes.top()->weight) == nodes.top()) {
+							break;
+						}
+					}
+					//vec.push_back(0);
+					current = parent[current];
+				}
+
+				uint8_t* bytes_arr = (uint8_t*)&count;
+				
+				vec.push_back(bytes_arr[0]);
+				vec.push_back(bytes_arr[1]);
+
+			}
+		}
+	}
+
+	uint8_t* arr = (uint8_t*)calloc(vec.size(), sizeof(*arr));
+
+	if (!arr) {
+		size = 0;
+		return 0;
+	}
+
+	size = vec.size();
+
+	memcpy(arr, vec.data(), vec.size() * sizeof(*arr));
+
+	return arr;
+}
+
 int TrieNode::search(uint8_t weight) {
 	int left = 0;
 	int right = this->children_size - 1;
@@ -150,10 +216,10 @@ int TrieNode::search(uint8_t weight) {
 	while (left <= right) {
 		int pivot = (left + right) / 2;
 		if (this->children[pivot].weight < weight) {
-			left = pivot + 1;
+			left = pivot + (size_t)1;
 		}
 		else if (this->children[pivot].weight > weight) {
-			right = pivot - 1;
+			right = pivot - (size_t)1;
 		}
 		else {
 			return pivot;

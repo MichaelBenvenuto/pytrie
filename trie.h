@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#include <vector>
+
 class TrieNode {
 public:
 	TrieNode();
@@ -17,17 +19,18 @@ public:
 	TrieNode* traverse(uint8_t);
 	
 	uint8_t getWeight() { return this->weight; }
-	unsigned int getChildrenCount() { return this->children_size; }
+	size_t getChildrenCount() { return this->children_size; }
 
 	TrieNode* getChildren() { return this->children; }
 
+	uint8_t* serialize(size_t &size);
 
 	int search(uint8_t);
 protected:
 	uint8_t weight;
 
 private:
-	unsigned int children_size;
+	size_t children_size;
 	TrieNode* children;
 };
 
@@ -44,6 +47,10 @@ public:
 	char** prefixSearch(const char*, size_t &size);
 
 	TrieNode* getRoot() { return &this->root; }
+
+	static Trie* deserialize(const uint8_t* serialized, const size_t size);
+
+	uint8_t* serialize(size_t &size) { return this->root.serialize(size); }
 
 private:
 	TrieNode root;
